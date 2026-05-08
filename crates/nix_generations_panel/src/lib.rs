@@ -1,16 +1,15 @@
 mod nix_commands;
 
-pub use nix_commands::{current_generation, list_generations, Generation};
+pub use nix_commands::{Generation, current_generation, list_generations};
 
 use gpui::{
-    actions, div, px, Action, App, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    IntoElement, ParentElement, Pixels, Render, Styled, WeakEntity, Window,
+    Action, App, AsyncWindowContext, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    IntoElement, Pixels, Render, WeakEntity, Window, actions, px,
 };
-use serde::Deserialize;
-use ui::{prelude::*, IconName, Label, LabelCommon, LabelSize};
+use ui::{IconName, Label, LabelSize, prelude::*};
 use workspace::{
-    dock::{DockPosition, Panel, PanelEvent},
     Workspace,
+    dock::{DockPosition, Panel, PanelEvent},
 };
 
 actions!(nix_generations_panel, [ToggleFocus]);
@@ -21,6 +20,7 @@ pub fn init(cx: &mut App) {
             workspace.toggle_panel_focus::<NixGenerationsPanel>(window, cx);
         });
     })
+    .detach();
 }
 
 pub struct NixGenerationsPanel {
@@ -40,21 +40,19 @@ impl NixGenerationsPanel {
         }
     }
 
-    pub fn load(
+    pub async fn load(
         workspace: WeakEntity<Workspace>,
-        cx: gpui::AsyncWindowContext,
-    ) -> gpui::Task<anyhow::Result<Entity<Self>>> {
-        cx.spawn(async move |mut cx| {
-            workspace.update_in(&mut cx, |workspace, window, cx| {
-                cx.new(|cx| Self::new(workspace, cx))
-            })
+        mut cx: AsyncWindowContext,
+    ) -> anyhow::Result<Entity<Self>> {
+        workspace.update_in(&mut cx, |workspace, _window, cx| {
+            cx.new(|cx| Self::new(workspace, cx))
         })
     }
 
     fn refresh_generations(&mut self, cx: &mut Context<Self>) {
-        cx.spawn(async move |this, mut cx| {
+        cx.spawn(async move |this, cx| {
             let generations = list_generations().await.unwrap_or_default();
-            this.update_in(&mut cx, |this, _window, cx| {
+            this.update(cx, |this, cx| {
                 this.generations = generations;
                 cx.notify();
             })
@@ -89,7 +87,12 @@ impl Panel for NixGenerationsPanel {
         true
     }
 
-    fn set_position(&mut self, position: DockPosition, _window: &mut Window, cx: &mut Context<Self>) {
+    fn set_position(
+        &mut self,
+        position: DockPosition,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.position = position;
         cx.notify();
     }
@@ -123,38 +126,56 @@ impl Render for NixGenerationsPanel {
             .key_context("NixGenerationsPanel")
             .track_focus(&self.focus_handle)
             .size_full()
-            .overflow_y_scroll()
             .child(
-                div()
-                    .p_2()
-                    .child(
-                        Label::new("NixOS Generations")
-                            .size(LabelSize::Large)
-                            .color(Color::Default),
-                    ),
+                div().p_2().child(
+                    Label::new("NixOS Generations")
+                        .size(LabelSize::Large)
+                        .color(Color::Default),
+                ),
             )
-            .children(generations.iter().map(|gen| {
-                let is_current = gen.current;
+            .children(generations.iter().map(|generation| {
+                let is_current = generation.current;
                 div()
                     .px_2()
                     .py_1()
-                    .when(is_current, |el| el.bg(cx.theme().colors().ghost_element_selected))
+                    .when(is_current, |el| {
+                        el.bg(cx.theme().colors().ghost_element_selected)
+                    })
                     .child(
                         div()
                             .flex()
                             .gap_2()
-                            .child(Label::new(format!("#{}", gen.number)).size(LabelSize::Default))
-                            .child(Label::new(gen.date.clone()).size(LabelSize::Small).color(Color::Muted))
+                            .child(
+                                Label::new(format!("#{}", generation.number))
+                                    .size(LabelSize::Default),
+                            )
+                            .child(
+                                Label::new(generation.date.clone())
+                                    .size(LabelSize::Small)
+                                    .color(Color::Muted),
+                            )
                             .when(is_current, |el| {
-                                el.child(Label::new("(current)").size(LabelSize::Small).color(Color::Accent))
+                                el.child(
+                                    Label::new("(current)")
+                                        .size(LabelSize::Small)
+                                        .color(Color::Accent),
+                                )
                             }),
                     )
                     .child(
                         div()
                             .flex()
                             .gap_2()
-                            .child(Label::new(format!("NixOS {}", gen.nixos_version)).size(LabelSize::Small).color(Color::Muted))
-                            .child(Label::new(format!("kernel {}", gen.kernel_version)).size(LabelSize::Small).color(Color::Muted)),
+                            .child(
+                                Label::new(format!("NixOS {}", generation.nixos_version))
+                                    .size(LabelSize::Small)
+                                    .color(Color::Muted),
+                            )
+                            .child(
+                                Label::new(format!("kernel {}", generation.kernel_version))
+                                    .size(LabelSize::Small)
+                                    .color(Color::Muted),
+                            ),
                     )
             }))
     }

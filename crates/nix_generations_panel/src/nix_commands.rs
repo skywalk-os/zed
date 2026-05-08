@@ -54,8 +54,8 @@ pub async fn list_generations() -> Result<Vec<Generation>> {
             );
         }
 
-        let stdout = String::from_utf8(output.stdout)
-            .context("nixos-rebuild output was not valid UTF-8")?;
+        let stdout =
+            String::from_utf8(output.stdout).context("nixos-rebuild output was not valid UTF-8")?;
 
         let entries: Vec<GenerationJson> =
             serde_json::from_str(&stdout).context("failed to parse generations JSON")?;
@@ -87,7 +87,7 @@ pub fn current_generation() -> Result<u32> {
             "unexpected profile symlink format: {name:?}, expected system-<N>-link"
         ))?;
 
-    number_str
-        .parse::<u32>()
-        .context(format!("failed to parse generation number from {number_str:?}"))
+    number_str.parse::<u32>().context(format!(
+        "failed to parse generation number from {number_str:?}"
+    ))
 }
